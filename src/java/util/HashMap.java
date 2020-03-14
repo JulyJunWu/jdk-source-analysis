@@ -282,6 +282,11 @@ public class HashMap<K,V> extends AbstractMap<K,V>
     /**
      * Basic hash bin node, used for most entries.  (See below for
      * TreeNode subclass, and in LinkedHashMap for its Entry subclass.)
+     *
+     * 单向链表结构
+     * JDK1.7是Entry
+     * 1.8是Node
+     *
      */
     static class Node<K,V> implements Map.Entry<K,V> {
         final int hash;
@@ -340,6 +345,8 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      * cheapest possible way to reduce systematic lossage, as well as
      * to incorporate impact of the highest bits that would otherwise
      * never be used in index calculations because of table bounds.
+     *
+     * 位移计算,二次hash,减少hash碰撞,使得key能更为均匀的分布在数组中
      */
     static final int hash(Object key) {
         int h;
@@ -411,6 +418,10 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      * necessary. When allocated, length is always a power of two.
      * (We also tolerate length zero in some operations to allow
      * bootstrapping mechanics that are currently not needed.)
+     *
+     * 注意事项::
+     *  JDK1.7是 Entry数组
+     *
      */
     transient Node<K,V>[] table;
 
@@ -422,6 +433,7 @@ public class HashMap<K,V> extends AbstractMap<K,V>
 
     /**
      * The number of key-value mappings contained in this map.
+     * 实际大小
      */
     transient int size;
 
@@ -431,6 +443,7 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      * the HashMap or otherwise modify its internal structure (e.g.,
      * rehash).  This field is used to make iterators on Collection-views of
      * the HashMap fail-fast.  (See ConcurrentModificationException).
+     * 修改的次数
      */
     transient int modCount;
 
@@ -444,7 +457,10 @@ public class HashMap<K,V> extends AbstractMap<K,V>
     // field holds the initial array capacity, or zero signifying
     // DEFAULT_INITIAL_CAPACITY.)
     /**
-     * 需要进行扩容的大小 , 当size大于该threshold的时候需要进行扩容
+     * 需要进行扩容的大小,当size大于该threshold的时候需要进行扩容
+     * 该变量分阶段理解:
+     *   数组未初始化阶段: 当指定了初始的容量,在数组尚未初始化的阶段,这个其实代表的含义是数据的长度
+     *   数组已初始化完毕: 这个变量的含义就是当size大于该值的时候需要进行扩容
      */
     int threshold;
 
@@ -478,6 +494,11 @@ public class HashMap<K,V> extends AbstractMap<K,V>
             throw new IllegalArgumentException("Illegal load factor: " +
                                                loadFactor);
         this.loadFactor = loadFactor;
+        /**
+         * 该变量分阶段理解
+         *  数组未初始化阶段: 当指定了初始的容量,在数组尚未初始化的阶段,这个其实代表的含义是数据的长度
+         *  数组已初始化完毕: 这个变量的含义就是当size大于该值的时候需要进行扩容
+         */
         this.threshold = tableSizeFor(initialCapacity);
     }
 
@@ -578,6 +599,7 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      */
     public V get(Object key) {
         Node<K,V> e;
+        //1.计算hash;2.根据hash和key查找
         return (e = getNode(hash(key), key)) == null ? null : e.value;
     }
 
@@ -592,12 +614,17 @@ public class HashMap<K,V> extends AbstractMap<K,V>
         Node<K,V>[] tab; Node<K,V> first, e; int n; K k;
         if ((tab = table) != null && (n = tab.length) > 0 &&
             (first = tab[(n - 1) & hash]) != null) {
+            //检查第一个是否就是我们查找的数据
+            //比较hash,比较key==或者比较equals
             if (first.hash == hash && // always check first node
                 ((k = first.key) == key || (key != null && key.equals(k))))
                 return first;
+            //说明第一个不是我们预期的
             if ((e = first.next) != null) {
+                //如果是红黑树的话....当场去世...
                 if (first instanceof TreeNode)
                     return ((TreeNode<K,V>)first).getTreeNode(hash, key);
+                //迭代链表直到找到我们需要的值,或者到最后都没找到直接返回null;
                 do {
                     if (e.hash == hash &&
                         ((k = e.key) == key || (key != null && key.equals(k))))
@@ -648,8 +675,10 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      */
     final V putVal(int hash, K key, V value, boolean onlyIfAbsent,
                    boolean evict) {
+        //n:数组长度; i: 当前需要保存的数据应该存放在数组中的索引位置
+        //p : 索引i在数组中的node值
         Node<K,V>[] tab; Node<K,V> p; int n, i;
-        // 第一次进来如果未初始化数组,则开始创建一个数组
+        //第一次进来如果未初始化数组,则开始创建一个数组
         if ((tab = table) == null || (n = tab.length) == 0)
             //初始化数组
             n = (tab = resize()).length;
@@ -657,40 +686,55 @@ public class HashMap<K,V> extends AbstractMap<K,V>
          * i为该key所属的数组最大下标
          * &的操作能够保证得出的索引一定是处于0-i(包含)范围内,意外着不会数组越界!
          */
-        if ((p = tab[i = (n - 1) & hash]) == null)
+        //当前索引下标无数据,直接将数据用Node进行包赚保存到数组中
+        if ((p = tab[i = (n - 1) & hash]) == null) {
             tab[i] = newNode(hash, key, value, null);
+        }
+        //说明当前索引已经存在值,需要进行验证是否已经存在(存在就是将值替换)或者新增到链表尾部
         else {
             Node<K,V> e; K k;
-            if (p.hash == hash &&
-                ((k = p.key) == key || (key != null && key.equals(k))))
+            //判断是否同一个对象, 1.hash值一致; 2.key相同或者equals相等
+            if (p.hash == hash &&((k = p.key) == key || (key != null && key.equals(k))))
                 e = p;
+            //如果是红黑树结构
             else if (p instanceof TreeNode)
                 e = ((TreeNode<K,V>)p).putTreeVal(this, tab, hash, key, value);
             else {
+                //正常Node结构; binCount:链表的长度
                 for (int binCount = 0; ; ++binCount) {
+                    //没有节点了
                     if ((e = p.next) == null) {
+                        //直接将数据包装成Node保存到该链表的尾部
                         p.next = newNode(hash, key, value, null);
+                        //当链表的长度大等于8的时候,会将该链表转为红黑树
                         if (binCount >= TREEIFY_THRESHOLD - 1) // -1 for 1st
                             treeifyBin(tab, hash);
                         break;
                     }
-                    if (e.hash == hash &&
-                        ((k = e.key) == key || (key != null && key.equals(k))))
+                    //链表中已存在该键值对
+                    if (e.hash == hash && ((k = e.key) == key || (key != null && key.equals(k))))
                         break;
                     p = e;
                 }
             }
+            //e不为null代表这当前数组中存在该键值对
             if (e != null) { // existing mapping for key
                 V oldValue = e.value;
+                //替换旧值
                 if (!onlyIfAbsent || oldValue == null)
                     e.value = value;
+                //扩展函数,暂无实现
                 afterNodeAccess(e);
                 return oldValue;
             }
         }
+        //修改次数自增
         ++modCount;
+        //实际大小自增,如果size大于阀值(就是数组容量 * 0.75),name触发扩容
         if (++size > threshold)
+            //扩容
             resize();
+        //扩展函数,暂无实现
         afterNodeInsertion(evict);
         return null;
     }
@@ -870,17 +914,22 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      */
     final Node<K,V> removeNode(int hash, Object key, Object value,
                                boolean matchValue, boolean movable) {
+        //p : 当前数组中的索引值,链表的首个元素
         Node<K,V>[] tab; Node<K,V> p; int n, index;
         if ((tab = table) != null && (n = tab.length) > 0 &&
             (p = tab[index = (n - 1) & hash]) != null) {
+            // node: 需要删除的元素
             Node<K,V> node = null, e; K k; V v;
-            if (p.hash == hash &&
-                ((k = p.key) == key || (key != null && key.equals(k))))
+            //如果链表的第一个元素(首部)就是我们需要删除的元素
+            if (p.hash == hash && ((k = p.key) == key || (key != null && key.equals(k))))
                 node = p;
+            //需要从链表中找到需要删除的Node节点
             else if ((e = p.next) != null) {
+                //如果是红黑树的话..GG
                 if (p instanceof TreeNode)
                     node = ((TreeNode<K,V>)p).getTreeNode(hash, key);
                 else {
+                    //迭代查找,直到找到匹配节点或者不存在该节点
                     do {
                         if (e.hash == hash &&
                             ((k = e.key) == key ||
@@ -892,16 +941,22 @@ public class HashMap<K,V> extends AbstractMap<K,V>
                     } while ((e = e.next) != null);
                 }
             }
+            //删除的元素存在
             if (node != null && (!matchValue || (v = node.value) == value ||
                                  (value != null && value.equals(v)))) {
                 if (node instanceof TreeNode)
                     ((TreeNode<K,V>)node).removeTreeNode(this, tab, movable);
+                //如果移除的数据是链表的首部,直接将首部的next设置为当前数组下标值
                 else if (node == p)
                     tab[index] = node.next;
                 else
+                    //此时这个p代表的是node的上个节点
                     p.next = node.next;
+                //修改次数自增
                 ++modCount;
+                //实际大小--
                 --size;
+                //扩展函数,暂无实现
                 afterNodeRemoval(node);
                 return node;
             }
@@ -919,6 +974,7 @@ public class HashMap<K,V> extends AbstractMap<K,V>
         if ((tab = table) != null && size > 0) {
             size = 0;
             for (int i = 0; i < tab.length; ++i)
+                //这么粗暴???
                 tab[i] = null;
         }
     }
