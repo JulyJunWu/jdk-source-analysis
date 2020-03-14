@@ -232,6 +232,9 @@ public class HashMap<K,V> extends AbstractMap<K,V>
 
     /**
      * The default initial capacity - MUST be a power of two.
+     *
+     * 默认的数组长度,必须是2的幂次方
+     *
      */
     static final int DEFAULT_INITIAL_CAPACITY = 1 << 4; // aka 16
 
@@ -244,6 +247,10 @@ public class HashMap<K,V> extends AbstractMap<K,V>
 
     /**
      * The load factor used when none specified in constructor.
+     * 装载因子
+     *
+     * 因为容量必须是2的幂次方, 容量 * 0.75 刚好又是整数
+     *
      */
     static final float DEFAULT_LOAD_FACTOR = 0.75f;
 
@@ -336,6 +343,15 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      */
     static final int hash(Object key) {
         int h;
+        /**
+         * 如果key是null的话,hash就是0
+         *
+         *  h                : 00011010 01010101 00101010 00110100
+         *  h>>>16(无符号右移) : 00000000 00000000 00011010 01010101
+         *  ---------------------------------------------
+         *^异或(相同为0,不同则1): 00011010 01010101 00110000 01100001
+         *
+         */
         return (key == null) ? 0 : (h = key.hashCode()) ^ (h >>> 16);
     }
 
@@ -374,8 +390,10 @@ public class HashMap<K,V> extends AbstractMap<K,V>
 
     /**
      * Returns a power of two size for the given target capacity.
+     * 得到一个大等于 cap的 2的幂次方的容量
+     * 计算数组的长度
      */
-    static final int tableSizeFor(int cap) {
+    public static final int tableSizeFor(int cap) {
         int n = cap - 1;
         n |= n >>> 1;
         n |= n >>> 2;
@@ -384,6 +402,7 @@ public class HashMap<K,V> extends AbstractMap<K,V>
         n |= n >>> 16;
         return (n < 0) ? 1 : (n >= MAXIMUM_CAPACITY) ? MAXIMUM_CAPACITY : n + 1;
     }
+
 
     /* ---------------- Fields -------------- */
 
@@ -424,10 +443,14 @@ public class HashMap<K,V> extends AbstractMap<K,V>
     // Additionally, if the table array has not been allocated, this
     // field holds the initial array capacity, or zero signifying
     // DEFAULT_INITIAL_CAPACITY.)
+    /**
+     * 需要进行扩容的大小 , 当size大于该threshold的时候需要进行扩容
+     */
     int threshold;
 
     /**
      * The load factor for the hash table.
+     * 装载因子,默认是0.75 , 也就说当size大于capacity的75%时,会触发库扩容机制
      *
      * @serial
      */
@@ -448,6 +471,7 @@ public class HashMap<K,V> extends AbstractMap<K,V>
         if (initialCapacity < 0)
             throw new IllegalArgumentException("Illegal initial capacity: " +
                                                initialCapacity);
+        //验证容量是否超出
         if (initialCapacity > MAXIMUM_CAPACITY)
             initialCapacity = MAXIMUM_CAPACITY;
         if (loadFactor <= 0 || Float.isNaN(loadFactor))
@@ -625,8 +649,14 @@ public class HashMap<K,V> extends AbstractMap<K,V>
     final V putVal(int hash, K key, V value, boolean onlyIfAbsent,
                    boolean evict) {
         Node<K,V>[] tab; Node<K,V> p; int n, i;
+        // 第一次进来如果未初始化数组,则开始创建一个数组
         if ((tab = table) == null || (n = tab.length) == 0)
+            //初始化数组
             n = (tab = resize()).length;
+        /**
+         * i为该key所属的数组最大下标
+         * &的操作能够保证得出的索引一定是处于0-i(包含)范围内,意外着不会数组越界!
+         */
         if ((p = tab[i = (n - 1) & hash]) == null)
             tab[i] = newNode(hash, key, value, null);
         else {
@@ -673,51 +703,75 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      * with a power of two offset in the new table.
      *
      * @return the table
+     *
+     * 扩容
      */
     final Node<K,V>[] resize() {
         Node<K,V>[] oldTab = table;
+        // 如果是null,说明是首次初始数组
         int oldCap = (oldTab == null) ? 0 : oldTab.length;
         int oldThr = threshold;
         int newCap, newThr = 0;
+        //扩容,并非初始化
         if (oldCap > 0) {
             if (oldCap >= MAXIMUM_CAPACITY) {
                 threshold = Integer.MAX_VALUE;
                 return oldTab;
             }
+            //2倍的数组长度
             else if ((newCap = oldCap << 1) < MAXIMUM_CAPACITY &&
                      oldCap >= DEFAULT_INITIAL_CAPACITY)
+                //同时将下次需要进行扩容的大小调整
                 newThr = oldThr << 1; // double threshold
         }
+        //下面这2个else只有在首次初始化数组才会进来
+        //首次初始化数组并且构造HashMap的时候指定了大小容量
         else if (oldThr > 0) // initial capacity was placed in threshold
             newCap = oldThr;
+        //未指定数组容量
         else {               // zero initial threshold signifies using defaults
+            //默认数组容量为16
             newCap = DEFAULT_INITIAL_CAPACITY;
+            //下次需要进行扩容的size大小  0.75 * 容量
             newThr = (int)(DEFAULT_LOAD_FACTOR * DEFAULT_INITIAL_CAPACITY);
         }
         if (newThr == 0) {
+            //下一次需要扩容的size大小
             float ft = (float)newCap * loadFactor;
             newThr = (newCap < MAXIMUM_CAPACITY && ft < (float)MAXIMUM_CAPACITY ?
                       (int)ft : Integer.MAX_VALUE);
         }
+        //下次size大于该值则触发扩容
         threshold = newThr;
+        //创建新的大小的数组
         @SuppressWarnings({"rawtypes","unchecked"})
             Node<K,V>[] newTab = (Node<K,V>[])new Node[newCap];
         table = newTab;
         if (oldTab != null) {
+            //数据迁移,把旧table的数据迁移到新table上
             for (int j = 0; j < oldCap; ++j) {
                 Node<K,V> e;
                 if ((e = oldTab[j]) != null) {
+                    //将旧数组的下标值填充为null,方便GC
                     oldTab[j] = null;
+                    //说明该链表只有一个元素,直接计算出索引下标并赋值
                     if (e.next == null)
                         newTab[e.hash & (newCap - 1)] = e;
+                    //如果该链表结构是红黑树,暂时不深入,等我更流弊了再来分析
                     else if (e instanceof TreeNode)
                         ((TreeNode<K,V>)e).split(this, newTab, j, oldCap);
                     else { // preserve order
+                        //位于该链表下的node,在新数组的位置只有两种情况
+                        //第一种,在新数组的索引下标位置还是旧数组的索引下标
                         Node<K,V> loHead = null, loTail = null;
+                        //第二种,在新数组的索引下标是 旧数组的下标+旧数组长度
                         Node<K,V> hiHead = null, hiTail = null;
                         Node<K,V> next;
+                        //一直迭代,直到最后一个node为null
                         do {
                             next = e.next;
+                            //需要注意的是这边是旧数组的长度,而不是长度-1
+                            //第一种情况
                             if ((e.hash & oldCap) == 0) {
                                 if (loTail == null)
                                     loHead = e;
@@ -725,6 +779,7 @@ public class HashMap<K,V> extends AbstractMap<K,V>
                                     loTail.next = e;
                                 loTail = e;
                             }
+                            //第二种情况
                             else {
                                 if (hiTail == null)
                                     hiHead = e;
@@ -733,8 +788,11 @@ public class HashMap<K,V> extends AbstractMap<K,V>
                                 hiTail = e;
                             }
                         } while ((e = next) != null);
+                        //如果有值,则赋给新数组
                         if (loTail != null) {
+                            //设置最后的node为null
                             loTail.next = null;
+                            //将head赋值给新数组(下标就是旧数组的下标)
                             newTab[j] = loHead;
                         }
                         if (hiTail != null) {
