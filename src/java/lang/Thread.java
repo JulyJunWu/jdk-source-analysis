@@ -25,21 +25,22 @@
 
 package java.lang;
 
-import java.lang.ref.Reference;
-import java.lang.ref.ReferenceQueue;
-import java.lang.ref.WeakReference;
-import java.security.AccessController;
-import java.security.AccessControlContext;
-import java.security.PrivilegedAction;
-import java.util.Map;
-import java.util.HashMap;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.locks.LockSupport;
 import sun.nio.ch.Interruptible;
 import sun.reflect.CallerSensitive;
 import sun.reflect.Reflection;
 import sun.security.util.SecurityConstants;
+
+import java.lang.ref.Reference;
+import java.lang.ref.ReferenceQueue;
+import java.lang.ref.WeakReference;
+import java.security.AccessControlContext;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.locks.LockSupport;
 
 
 /**
@@ -179,6 +180,9 @@ class Thread implements Runnable {
 
     /* ThreadLocal values pertaining to this thread. This map is maintained
      * by the ThreadLocal class. */
+    /**
+     * 存放我们set值的地方 , 底层其实就是一个Entry数组(非HashMap数组+链表)
+     */
     ThreadLocal.ThreadLocalMap threadLocals = null;
 
     /*
@@ -1155,7 +1159,7 @@ class Thread implements Runnable {
 
     /**
      * Returns an estimate of the number of active threads in the current
-     * thread's {@linkplain java.lang.ThreadGroup thread group} and its
+     * thread's {@linkplain ThreadGroup thread group} and its
      * subgroups. Recursively iterates over all subgroups in the current
      * thread's thread group.
      *
@@ -1176,7 +1180,7 @@ class Thread implements Runnable {
     /**
      * Copies into the specified array every active thread in the current
      * thread's thread group and its subgroups. This method simply
-     * invokes the {@link java.lang.ThreadGroup#enumerate(Thread[])}
+     * invokes the {@link ThreadGroup#enumerate(Thread[])}
      * method of the current thread's thread group.
      *
      * <p> An application might use the {@linkplain #activeCount activeCount}
@@ -1196,7 +1200,7 @@ class Thread implements Runnable {
      * @return  the number of threads put into the array
      *
      * @throws  SecurityException
-     *          if {@link java.lang.ThreadGroup#checkAccess} determines that
+     *          if {@link ThreadGroup#checkAccess} determines that
      *          the current thread cannot access its thread group
      */
     public static int enumerate(Thread tarray[]) {

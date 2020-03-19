@@ -24,7 +24,8 @@
  */
 
 package java.lang;
-import java.lang.ref.*;
+
+import java.lang.ref.WeakReference;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
@@ -81,12 +82,15 @@ public class ThreadLocal<T> {
      * in the common case where consecutively constructed ThreadLocals
      * are used by the same threads, while remaining well-behaved in
      * less common cases.
+     *
+     * 获取当前对应的hashCode(好像hashCode没效果了???)
      */
     private final int threadLocalHashCode = nextHashCode();
 
     /**
      * The next hash code to be given out. Updated atomically. Starts at
      * zero.
+     * 常量,用来获取threadLocalHashCode
      */
     private static AtomicInteger nextHashCode =
         new AtomicInteger();
@@ -143,7 +147,7 @@ public class ThreadLocal<T> {
 
     /**
      * Creates a thread local variable.
-     * @see #withInitial(java.util.function.Supplier)
+     * @see #withInitial(Supplier)
      */
     public ThreadLocal() {
     }
@@ -197,11 +201,15 @@ public class ThreadLocal<T> {
      *        this thread-local.
      */
     public void set(T value) {
+        //获取当前线程
         Thread t = Thread.currentThread();
+        //获取Map
         ThreadLocalMap map = getMap(t);
         if (map != null)
+            //设置值,注意:是以K=ThreadLocal ,V=value形式
             map.set(this, value);
         else
+            //如果当前线程的threadLocalMap未创建,则创建
             createMap(t, value);
     }
 
@@ -228,6 +236,7 @@ public class ThreadLocal<T> {
      *
      * @param  t the current thread
      * @return the map
+     * 获取当前内部Map
      */
     ThreadLocalMap getMap(Thread t) {
         return t.threadLocals;
@@ -304,6 +313,8 @@ public class ThreadLocal<T> {
          * == null) mean that the key is no longer referenced, so the
          * entry can be expunged from table.  Such entries are referred to
          * as "stale entries" in the code that follows.
+         *
+         * 实现了弱引用 -> 一旦发生GC时会进行回收(也就是会将ThreadLocal k进行回收,所以使用的时候要进行remove避免内存的泄露)
          */
         static class Entry extends WeakReference<ThreadLocal<?>> {
             /** The value associated with this ThreadLocal. */
@@ -333,11 +344,13 @@ public class ThreadLocal<T> {
 
         /**
          * The next size value at which to resize.
+         * 当实际数组大小大等于该值则进行数组的扩容,与HashMap不一样
          */
         private int threshold; // Default to 0
 
         /**
          * Set the resize threshold to maintain at worst a 2/3 load factor.
+         * 当前大长度 的 两倍 除以 3 的一个扩容阀值
          */
         private void setThreshold(int len) {
             threshold = len * 2 / 3;
@@ -345,6 +358,7 @@ public class ThreadLocal<T> {
 
         /**
          * Increment i modulo len.
+         * 如果发生了Hash冲突,则在索引基础上进行+1,如果结果大等于数组长度,则直接置为零.
          */
         private static int nextIndex(int i, int len) {
             return ((i + 1 < len) ? i + 1 : 0);
@@ -413,6 +427,7 @@ public class ThreadLocal<T> {
         private Entry getEntry(ThreadLocal<?> key) {
             int i = key.threadLocalHashCode & (table.length - 1);
             Entry e = table[i];
+            //存在该Entry并且key未被回收
             if (e != null && e.get() == key)
                 return e;
             else
@@ -457,28 +472,33 @@ public class ThreadLocal<T> {
             // least as common to use set() to create new entries as
             // it is to replace existing ones, in which case, a fast
             // path would fail more often than not.
-
+            //获取当前内部的数组
             Entry[] tab = table;
+            //数组长度
             int len = tab.length;
+            //通过ThreadLocal的threadLocalHashCode 与 数组长度进行与运算,得到该key对应在数组中的索引
             int i = key.threadLocalHashCode & (len-1);
 
             for (Entry e = tab[i];
                  e != null;
+                 //这边其实就是解决Hash碰撞,直接在索引基础上进+1,超出数据长度则变为0
                  e = tab[i = nextIndex(i, len)]) {
                 ThreadLocal<?> k = e.get();
-
+                //说明当前存放的key已经存在,name直接将value值进行覆盖
                 if (k == key) {
                     e.value = value;
                     return;
                 }
-
+                //如果k==null,说明该key已经被GC回收了
                 if (k == null) {
+                    //复杂
                     replaceStaleEntry(key, value, i);
                     return;
                 }
             }
-
+            //走到这一段说明当前数组中并无该key的数据,直接保存
             tab[i] = new Entry(key, value);
+            //++大小
             int sz = ++size;
             if (!cleanSomeSlots(i, sz) && sz >= threshold)
                 rehash();
@@ -490,11 +510,14 @@ public class ThreadLocal<T> {
         private void remove(ThreadLocal<?> key) {
             Entry[] tab = table;
             int len = tab.length;
+            // 计算当前key对应在数据中的索引
             int i = key.threadLocalHashCode & (len-1);
+            // 这个查询key的节点的时间复杂度最严重的情况可能是O(n)
             for (Entry e = tab[i];
                  e != null;
                  e = tab[i = nextIndex(i, len)]) {
                 if (e.get() == key) {
+                    //将ThreadLocal引用置为null
                     e.clear();
                     expungeStaleEntry(i);
                     return;
@@ -591,17 +614,21 @@ public class ThreadLocal<T> {
             int len = tab.length;
 
             // expunge entry at staleSlot
+            // 将当前索引值设置null
             tab[staleSlot].value = null;
+            // 将当前索引对象设置为null
             tab[staleSlot] = null;
             size--;
 
             // Rehash until we encounter null
             Entry e;
             int i;
+            // 触发检测 数组中 Entry的k是否为null
             for (i = nextIndex(staleSlot, len);
                  (e = tab[i]) != null;
                  i = nextIndex(i, len)) {
                 ThreadLocal<?> k = e.get();
+                // 说明发生了GC,置空,移除当前索引数据
                 if (k == null) {
                     e.value = null;
                     tab[i] = null;
