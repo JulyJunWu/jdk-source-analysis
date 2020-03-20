@@ -191,6 +191,8 @@ public class ScheduledThreadPoolExecutor
          * value indicates fixed-rate execution.  A negative value
          * indicates fixed-delay execution.  A value of 0 indicates a
          * non-repeating task.
+         * 大于0表示这是一个周期性任务
+         * 等于0表示这是个一次性任务
          */
         private final long period;
 
@@ -199,6 +201,8 @@ public class ScheduledThreadPoolExecutor
 
         /**
          * Index into delay queue, to support faster cancellation.
+         *
+         * 这个任务对象在数组中对应的索引
          */
         int heapIndex;
 
@@ -259,6 +263,8 @@ public class ScheduledThreadPoolExecutor
          * Returns {@code true} if this is a periodic (not a one-shot) action.
          *
          * @return {@code true} if periodic
+         *
+         * 判断是否是周期性任务 0:一次性  != 0 周期性任务
          */
         public boolean isPeriodic() {
             return period != 0;
@@ -290,8 +296,11 @@ public class ScheduledThreadPoolExecutor
             if (!canRunInCurrentRunState(periodic))
                 cancel(false);
             else if (!periodic)
+                //执行非周期性任务
                 ScheduledFutureTask.super.run();
+            //执行run
             else if (ScheduledFutureTask.super.runAndReset()) {
+                //设置下一轮执行时间
                 setNextRunTime();
                 reExecutePeriodic(outerTask);
             }
@@ -343,6 +352,7 @@ public class ScheduledThreadPoolExecutor
      */
     void reExecutePeriodic(RunnableScheduledFuture<?> task) {
         if (canRunInCurrentRunState(true)) {
+            //重新将自己(task)丢到队列中
             super.getQueue().add(task);
             if (!canRunInCurrentRunState(true) && remove(task))
                 task.cancel(false);
@@ -495,6 +505,7 @@ public class ScheduledThreadPoolExecutor
 
     /**
      * Returns the trigger time of a delayed action.
+     * 计算触发的时间戳
      */
     long triggerTime(long delay) {
         return now() +
@@ -833,9 +844,11 @@ public class ScheduledThreadPoolExecutor
          */
 
         private static final int INITIAL_CAPACITY = 16;
+        // 存放任务的数组
         private RunnableScheduledFuture<?>[] queue =
             new RunnableScheduledFuture<?>[INITIAL_CAPACITY];
         private final ReentrantLock lock = new ReentrantLock();
+        //队列的实际大小
         private int size = 0;
 
         /**
@@ -912,9 +925,12 @@ public class ScheduledThreadPoolExecutor
 
         /**
          * Resizes the heap array.  Call only when holding lock.
+         * 扩容为原来数组长度的1.5倍
+         * 如: 10 -> 15
          */
         private void grow() {
             int oldCapacity = queue.length;
+            // 扩容为原来的  0.5倍
             int newCapacity = oldCapacity + (oldCapacity >> 1); // grow 50%
             if (newCapacity < 0) // overflow
                 newCapacity = Integer.MAX_VALUE;
@@ -1002,14 +1018,19 @@ public class ScheduledThreadPoolExecutor
             }
         }
 
+        /**
+         * 提交任务到队列
+         */
         public boolean offer(Runnable x) {
             if (x == null)
                 throw new NullPointerException();
             RunnableScheduledFuture<?> e = (RunnableScheduledFuture<?>)x;
             final ReentrantLock lock = this.lock;
+            //上锁
             lock.lock();
             try {
                 int i = size;
+                //实际大小大于数组长度(队列实现就是一个数组),则进行扩容
                 if (i >= queue.length)
                     grow();
                 size = i + 1;
@@ -1024,6 +1045,7 @@ public class ScheduledThreadPoolExecutor
                     available.signal();
                 }
             } finally {
+                //释放锁
                 lock.unlock();
             }
             return true;

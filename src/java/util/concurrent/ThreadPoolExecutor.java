@@ -997,6 +997,9 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
      *
      * @param w the worker
      * @param completedAbruptly if the worker died due to user exception
+     *
+     *                执行线程的退出
+     *
      */
     private void processWorkerExit(Worker w, boolean completedAbruptly) {
         if (completedAbruptly) // If abrupt, then workerCount wasn't adjusted
@@ -1042,6 +1045,8 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
      *
      * @return task, or null if the worker must exit, in which case
      *         workerCount is decremented
+     *
+     *  获取任务,如果获取的task是null,name说明这个线程要退出
      */
     private Runnable getTask() {
         boolean timedOut = false; // Did the last poll() time out?
@@ -1059,16 +1064,20 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
             int wc = workerCountOf(c);
 
             // Are workers subject to culling?
+            // 是否 允许核心线程过期 或者 线程数量超出核心线程数量
             boolean timed = allowCoreThreadTimeOut || wc > corePoolSize;
 
+            // 是都超出最大线程数量
             if ((wc > maximumPoolSize || (timed && timedOut))
                 && (wc > 1 || workQueue.isEmpty())) {
+                //线程数减少,说明该线程要退出
                 if (compareAndDecrementWorkerCount(c))
                     return null;
                 continue;
             }
 
             try {
+                // 阻塞获取队列中的任务
                 Runnable r = timed ?
                     workQueue.poll(keepAliveTime, TimeUnit.NANOSECONDS) :
                     workQueue.take();
@@ -1131,6 +1140,7 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
         w.unlock(); // allow interrupts
         boolean completedAbruptly = true;
         try {
+            // 线程不断循环获取任务执行
             while (task != null || (task = getTask()) != null) {
                 w.lock();
                 // If pool is stopping, ensure thread is interrupted;
@@ -1143,9 +1153,11 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
                     !wt.isInterrupted())
                     wt.interrupt();
                 try {
+                    //这个是扩展,无实现
                     beforeExecute(wt, task);
                     Throwable thrown = null;
                     try {
+                        //执行任务
                         task.run();
                     } catch (RuntimeException x) {
                         thrown = x; throw x;
@@ -1154,6 +1166,7 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
                     } catch (Throwable x) {
                         thrown = x; throw new Error(x);
                     } finally {
+                        //这个也是用来扩展,无实现
                         afterExecute(task, thrown);
                     }
                 } finally {
@@ -1599,6 +1612,7 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
      */
     void ensurePrestart() {
         int wc = workerCountOf(ctl.get());
+        // 当前线程数量未超过核心数量
         if (wc < corePoolSize)
             addWorker(null, true);
         else if (wc == 0)
