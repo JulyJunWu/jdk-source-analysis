@@ -159,6 +159,11 @@ import java.io.IOException;
  * @see     TreeMap
  * @see     Hashtable
  * @since   1.4
+ *
+ *  之所以是有序的, 是因为维护了一个链表结构,记录着 添加的顺序
+ *
+ *  通过设置构造参数以及 重写函数 , 可以实现一个 建议的LRU算法
+ *
  */
 public class LinkedHashMap<K,V>
     extends HashMap<K,V>
@@ -190,6 +195,7 @@ public class LinkedHashMap<K,V>
      * HashMap.Node subclass for normal LinkedHashMap entries.
      */
     static class Entry<K,V> extends HashMap.Node<K,V> {
+        // 上一个节点  下一个节点
         Entry<K,V> before, after;
         Entry(int hash, K key, V value, Node<K,V> next) {
             super(hash, key, value, next);
@@ -200,11 +206,15 @@ public class LinkedHashMap<K,V>
 
     /**
      * The head (eldest) of the doubly linked list.
+     *
+     * 头结点
      */
     transient LinkedHashMap.Entry<K,V> head;
 
     /**
      * The tail (youngest) of the doubly linked list.
+     *
+     * 尾结点
      */
     transient LinkedHashMap.Entry<K,V> tail;
 
@@ -212,6 +222,14 @@ public class LinkedHashMap<K,V>
      * The iteration ordering method for this linked hash map: <tt>true</tt>
      * for access-order, <tt>false</tt> for insertion-order.
      *
+     *
+     * 这个开关是用来 是否需要执行扩展的函数, 比如说 是否需要触发afterNodeAccess函数 等等
+     *
+     * 如果要实现一个LRU , 那么需要进行设置为true
+     *
+     * 容易需要对长度进行控制,那么需要从写removeEldestEntry函数
+     *
+     * 默认是false
      * @serial
      */
     final boolean accessOrder;
@@ -219,12 +237,20 @@ public class LinkedHashMap<K,V>
     // internal utilities
 
     // link at the end of list
+
+    /**
+     * 追加到链表的尾部
+     * @param p
+     */
     private void linkNodeLast(LinkedHashMap.Entry<K,V> p) {
         LinkedHashMap.Entry<K,V> last = tail;
         tail = p;
+        //首次的时候没有头结点和尾结点
         if (last == null)
+            // 把新加的元素置为头结点,同时页数尾部节点
             head = p;
         else {
+            //把两个节点进行关联
             p.before = last;
             last.after = p;
         }
@@ -247,6 +273,9 @@ public class LinkedHashMap<K,V>
 
     // overrides of HashMap hook methods
 
+    /**
+     * 重置
+     */
     void reinitialize() {
         super.reinitialize();
         head = tail = null;
@@ -280,6 +309,10 @@ public class LinkedHashMap<K,V>
         return t;
     }
 
+    /**
+     * 节点移除 , 需要将次节点关联的 前后节点进行关联
+     * @param e
+     */
     void afterNodeRemoval(Node<K,V> e) { // unlink
         LinkedHashMap.Entry<K,V> p =
             (LinkedHashMap.Entry<K,V>)e, b = p.before, a = p.after;
@@ -294,6 +327,10 @@ public class LinkedHashMap<K,V>
             a.before = b;
     }
 
+    /**
+     * 如果对容量有做限制,那么需要对removeEldestEntry函数重写
+     * @param evict
+     */
     void afterNodeInsertion(boolean evict) { // possibly remove eldest
         LinkedHashMap.Entry<K,V> first;
         if (evict && (first = head) != null && removeEldestEntry(first)) {
@@ -302,6 +339,12 @@ public class LinkedHashMap<K,V>
         }
     }
 
+    /**
+     * 如果需要LRU , 那么需要将accessOrder 设置为true,这样就会开启访问的元素后添加到尾端
+     *
+     * 在LRU中,一言而言,首部或者是尾部是最少人访问的, 在此处是首部
+     * @param e
+     */
     void afterNodeAccess(Node<K,V> e) { // move node to last
         LinkedHashMap.Entry<K,V> last;
         if (accessOrder && (last = tail) != e) {
