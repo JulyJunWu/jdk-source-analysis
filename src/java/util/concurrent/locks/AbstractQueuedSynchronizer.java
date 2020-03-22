@@ -376,6 +376,11 @@ public abstract class AbstractQueuedSynchronizer
      * Scherer and Michael Scott, along with members of JSR-166
      * expert group, for helpful ideas, discussions, and critiques
      * on the design of this class.
+     *
+     *
+     *  链表结构
+     *
+     *  主要是用来存放阻塞的线程
      */
     static final class Node {
         /** Marker to indicate a node is waiting in shared mode */
@@ -383,11 +388,17 @@ public abstract class AbstractQueuedSynchronizer
         /** Marker to indicate a node is waiting in exclusive mode */
         static final Node EXCLUSIVE = null;
 
-        /** waitStatus value to indicate thread has cancelled */
+        /** waitStatus value to indicate thread has cancelled
+         * 取消了
+         */
         static final int CANCELLED =  1;
-        /** waitStatus value to indicate successor's thread needs unparking */
+        /** waitStatus value to indicate successor's thread needs unparking
+         *  需要进行唤醒
+         * */
         static final int SIGNAL    = -1;
-        /** waitStatus value to indicate thread is waiting on condition */
+        /** waitStatus value to indicate thread is waiting on condition
+         *  有条件唤醒
+         * */
         static final int CONDITION = -2;
         /**
          * waitStatus value to indicate the next acquireShared should
@@ -518,17 +529,21 @@ public abstract class AbstractQueuedSynchronizer
      * initialization, it is modified only via method setHead.  Note:
      * If head exists, its waitStatus is guaranteed not to be
      * CANCELLED.
+     *
+     * 头结点,头结点只有waitStatus属性有用,其余都是废弃(注意:仅限头结点)
      */
     private transient volatile Node head;
 
     /**
      * Tail of the wait queue, lazily initialized.  Modified only via
      * method enq to add new wait node.
+     * 链表的尾部
      */
     private transient volatile Node tail;
 
     /**
      * The synchronization state.
+     * 一般而言,这个就是锁的数量,大于0则表示,还有锁可用
      */
     private volatile int state;
 
@@ -560,6 +575,8 @@ public abstract class AbstractQueuedSynchronizer
      * @param update the new value
      * @return {@code true} if successful. False return indicates that the actual
      *         value was not equal to the expected value.
+     *
+     *  通过CAS 操作内存修改state属性
      */
     protected final boolean compareAndSetState(int expect, int update) {
         // See below for intrinsics setup to support this
@@ -579,16 +596,24 @@ public abstract class AbstractQueuedSynchronizer
      * Inserts node into queue, initializing if necessary. See picture above.
      * @param node the node to insert
      * @return node's predecessor
+     *
+     * 入队,通过CAS自旋将节点设置为tail
      */
     private Node enq(final Node node) {
         for (;;) {
             Node t = tail;
+            //尾部节点为null,说明还未初始化
             if (t == null) { // Must initialize
+                // 通过CAS设置头部
                 if (compareAndSetHead(new Node()))
+                    // 第一次的时候,头部也是尾部
                     tail = head;
             } else {
+                // 将存放的节点与尾结点进行关联
                 node.prev = t;
+                //设置节点为尾部节点
                 if (compareAndSetTail(t, node)) {
+                    //将旧tail的next与新tail进行关联
                     t.next = node;
                     return t;
                 }
@@ -601,18 +626,23 @@ public abstract class AbstractQueuedSynchronizer
      *
      * @param mode Node.EXCLUSIVE for exclusive, Node.SHARED for shared
      * @return the new node
+     *
+     * 添加需要等待的线程到队列中
+     *
      */
     private Node addWaiter(Node mode) {
         Node node = new Node(Thread.currentThread(), mode);
         // Try the fast path of enq; backup to full enq on failure
         Node pred = tail;
         if (pred != null) {
+            // 如果一次CAS能搞定,那么成功直接返回
             node.prev = pred;
             if (compareAndSetTail(pred, node)) {
                 pred.next = node;
                 return node;
             }
         }
+        // 说明当前tail为null或者cas未成功,进入到此自旋添加
         enq(node);
         return node;
     }
@@ -634,6 +664,8 @@ public abstract class AbstractQueuedSynchronizer
      * Wakes up node's successor, if one exists.
      *
      * @param node the node
+     *
+     *  唤醒node的下一个线程
      */
     private void unparkSuccessor(Node node) {
         /*
@@ -643,6 +675,7 @@ public abstract class AbstractQueuedSynchronizer
          */
         int ws = node.waitStatus;
         if (ws < 0)
+            // 将waitStatus设置为0
             compareAndSetWaitStatus(node, ws, 0);
 
         /*
@@ -652,12 +685,16 @@ public abstract class AbstractQueuedSynchronizer
          * non-cancelled successor.
          */
         Node s = node.next;
+        // 如果未null或者 waitStatus已经取消
         if (s == null || s.waitStatus > 0) {
             s = null;
+            // 为什么不从当前Node向下呢?因为可能是null
+            // 从tail尾部向上查找,直到最上面的一个 需要唤醒的Node
             for (Node t = tail; t != null && t != node; t = t.prev)
                 if (t.waitStatus <= 0)
                     s = t;
         }
+        //唤醒线程
         if (s != null)
             LockSupport.unpark(s.thread);
     }
@@ -815,6 +852,7 @@ public abstract class AbstractQueuedSynchronizer
              * need a signal, but don't park yet.  Caller will need to
              * retry to make sure it cannot acquire before parking.
              */
+            // pred 是 node的上个节点,这里将pred的waitStatus设置为SIGNAL,意思是他的下一个节点需要进行唤醒
             compareAndSetWaitStatus(pred, ws, Node.SIGNAL);
         }
         return false;
@@ -831,9 +869,13 @@ public abstract class AbstractQueuedSynchronizer
      * Convenience method to park and then check if interrupted
      *
      * @return {@code true} if interrupted
+     *
+     * 进行阻塞,等待唤醒
      */
     private final boolean parkAndCheckInterrupt() {
+        //阻塞
         LockSupport.park(this);
+        //中断
         return Thread.interrupted();
     }
 
@@ -1256,6 +1298,9 @@ public abstract class AbstractQueuedSynchronizer
      *        {@link #tryRelease} but is otherwise uninterpreted and
      *        can represent anything you like.
      * @return the value returned from {@link #tryRelease}
+     *
+     * 1.释放锁
+     * 2.唤醒线程
      */
     public final boolean release(int arg) {
         if (tryRelease(arg)) {
